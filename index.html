@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>CampusShield — Campus Emergency Response</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet"/>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  :root{
+    --red:#ff3b3b;--red-glow:rgba(255,59,59,0.4);
+    --blue:#3b82f6;--blue-glow:rgba(59,130,246,0.4);
+    --green:#10b981;--green-glow:rgba(16,185,129,0.4);
+    --bg:#050816;--surface:rgba(255,255,255,0.04);
+    --border:rgba(255,255,255,0.08);--text:#f1f5f9;--muted:#94a3b8;
+  }
+  html,body{height:100%;font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);overflow-x:hidden}
+  
+  /* Animated background */
+  .bg-canvas{position:fixed;inset:0;z-index:0;overflow:hidden}
+  .orb{position:absolute;border-radius:50%;filter:blur(80px);opacity:.35;animation:orbFloat 8s ease-in-out infinite}
+  .orb-1{width:600px;height:600px;background:radial-gradient(circle,#ff3b3b,transparent);top:-200px;left:-150px;animation-delay:0s}
+  .orb-2{width:500px;height:500px;background:radial-gradient(circle,#3b82f6,transparent);bottom:-150px;right:-100px;animation-delay:-3s}
+  .orb-3{width:300px;height:300px;background:radial-gradient(circle,#8b5cf6,transparent);top:40%;left:50%;transform:translate(-50%,-50%);animation-delay:-6s}
+  @keyframes orbFloat{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-30px) scale(1.05)}}
+  
+  .grid-overlay{position:fixed;inset:0;z-index:0;background-image:linear-gradient(rgba(255,255,255,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);background-size:60px 60px;pointer-events:none}
+  
+  /* Main layout */
+  .container{position:relative;z-index:1;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2rem}
+  
+  /* Logo / Header */
+  .logo-wrap{text-align:center;margin-bottom:3.5rem}
+  .shield-icon{font-size:4rem;margin-bottom:1rem;display:block;filter:drop-shadow(0 0 20px var(--red-glow));animation:pulse 2s ease-in-out infinite}
+  @keyframes pulse{0%,100%{filter:drop-shadow(0 0 20px var(--red-glow))}50%{filter:drop-shadow(0 0 40px var(--red-glow)) drop-shadow(0 0 60px var(--red-glow))}}
+  .logo-title{font-size:3rem;font-weight:900;letter-spacing:-1px;background:linear-gradient(135deg,#fff 30%,#ff3b3b);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+  .logo-sub{font-size:1rem;color:var(--muted);margin-top:.5rem;letter-spacing:.1em;text-transform:uppercase}
+  
+  /* Status badge */
+  .status-badge{display:inline-flex;align-items:center;gap:.5rem;background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.3);border-radius:100px;padding:.35rem .9rem;font-size:.8rem;color:var(--green);margin-bottom:2rem}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--green);animation:blink 1.5s ease-in-out infinite}
+  @keyframes blink{0%,100%{opacity:1;box-shadow:0 0 6px var(--green)}50%{opacity:.4;box-shadow:none}}
+  
+  /* Role cards */
+  .roles-grid{display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;max-width:800px;width:100%}
+  @media(max-width:640px){.roles-grid{grid-template-columns:1fr}}
+  
+  .role-card{
+    position:relative;
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:24px;
+    padding:2.5rem 2rem;
+    cursor:pointer;
+    text-decoration:none;
+    color:inherit;
+    display:flex;flex-direction:column;align-items:center;text-align:center;gap:1rem;
+    transition:all .3s cubic-bezier(.4,0,.2,1);
+    overflow:hidden;
+    backdrop-filter:blur(20px);
+  }
+  .role-card::before{content:'';position:absolute;inset:0;opacity:0;transition:opacity .3s;pointer-events:none}
+  .role-card:hover{transform:translateY(-6px);border-color:transparent}
+  .role-card:hover::before{opacity:1}
+  .role-card:active{transform:translateY(-2px)}
+  
+  /* Shimmer on hover */
+  .role-card::after{
+    content:'';position:absolute;inset:0;
+    background:linear-gradient(135deg,transparent 40%,rgba(255,255,255,.06) 50%,transparent 60%);
+    transform:translateX(-100%);transition:transform .5s;pointer-events:none
+  }
+  .role-card:hover::after{transform:translateX(100%)}
+  
+  .role-card.reporter::before{background:radial-gradient(ellipse at center,rgba(255,59,59,.15),transparent 70%)}
+  .role-card.reporter:hover{box-shadow:0 0 0 1px rgba(255,59,59,.5),0 20px 60px rgba(255,59,59,.2)}
+  .role-card.responder::before{background:radial-gradient(ellipse at center,rgba(59,130,246,.15),transparent 70%)}
+  .role-card.responder:hover{box-shadow:0 0 0 1px rgba(59,130,246,.5),0 20px 60px rgba(59,130,246,.2)}
+  
+  .role-icon{
+    width:80px;height:80px;border-radius:20px;display:flex;align-items:center;justify-content:center;font-size:2.5rem;
+    position:relative;transition:transform .3s
+  }
+  .role-card:hover .role-icon{transform:scale(1.1)}
+  .reporter .role-icon{background:linear-gradient(135deg,rgba(255,59,59,.2),rgba(239,68,68,.1));box-shadow:0 0 30px rgba(255,59,59,.2)}
+  .responder .role-icon{background:linear-gradient(135deg,rgba(59,130,246,.2),rgba(99,102,241,.1));box-shadow:0 0 30px rgba(59,130,246,.2)}
+  
+  .role-label{font-size:1.4rem;font-weight:700;line-height:1.2}
+  .role-desc{font-size:.875rem;color:var(--muted);line-height:1.6}
+  .role-cta{
+    display:inline-flex;align-items:center;gap:.5rem;
+    font-size:.85rem;font-weight:600;padding:.6rem 1.4rem;border-radius:100px;
+    transition:all .2s;margin-top:.5rem
+  }
+  .reporter .role-cta{background:linear-gradient(135deg,#ff3b3b,#dc2626);box-shadow:0 4px 20px rgba(255,59,59,.35)}
+  .responder .role-cta{background:linear-gradient(135deg,#3b82f6,#6366f1);box-shadow:0 4px 20px rgba(59,130,246,.35)}
+  .role-card:hover .role-cta{transform:scale(1.05)}
+  
+  /* Features strip */
+  .features{display:flex;gap:2rem;margin-top:3rem;flex-wrap:wrap;justify-content:center}
+  .feat{display:flex;align-items:center;gap:.5rem;font-size:.8rem;color:var(--muted)}
+  .feat-icon{font-size:1rem}
+  
+  /* Floating particles */
+  .particle{position:fixed;pointer-events:none;border-radius:50%;animation:particleDrift linear infinite;opacity:0}
+  @keyframes particleDrift{0%{transform:translateY(100vh) scale(0);opacity:0}10%{opacity:.6}90%{opacity:.6}100%{transform:translateY(-100vh) scale(1);opacity:0}}
+</style>
+</head>
+<body>
+<div class="bg-canvas">
+  <div class="orb orb-1"></div>
+  <div class="orb orb-2"></div>
+  <div class="orb orb-3"></div>
+</div>
+<div class="grid-overlay"></div>
+
+<div class="container">
+  <div class="logo-wrap">
+    <span class="shield-icon">🛡️</span>
+    <h1 class="logo-title">CampusShield</h1>
+    <p class="logo-sub">Campus Emergency Response Coordinator</p>
+  </div>
+
+  <div class="status-badge">
+    <span class="dot"></span>
+    System Online · Real-time WebSocket Active
+  </div>
+
+  <div class="roles-grid">
+    <a href="/reporter" class="role-card reporter">
+      <div class="role-icon">🆘</div>
+      <div class="role-label">I Need Help</div>
+      <div class="role-desc">Report an incident, track your request status, and get real-time safety guidance while help is on the way.</div>
+      <div class="role-cta">Report Incident →</div>
+    </a>
+    <a href="/responder" class="role-card responder">
+      <div class="role-icon">🚨</div>
+      <div class="role-label">I'm Responding</div>
+      <div class="role-desc">View all active incidents on the live map, accept requests, and share your location with the person who reported.</div>
+      <div class="role-cta">Open Dashboard →</div>
+    </a>
+  </div>
+
+  <div class="features">
+    <div class="feat"><span class="feat-icon">⚡</span> Real-Time Alerts</div>
+    <div class="feat"><span class="feat-icon">📍</span> Live GPS Tracking</div>
+    <div class="feat"><span class="feat-icon">🤖</span> AI Triage Engine</div>
+    <div class="feat"><span class="feat-icon">🔔</span> Auto-Escalation</div>
+    <div class="feat"><span class="feat-icon">🗺️</span> Campus-Aware Routing</div>
+  </div>
+</div>
+
+<script>
+// Spawn floating particles
+(function(){
+  const colors=['#ff3b3b','#3b82f6','#8b5cf6','#10b981'];
+  for(let i=0;i<18;i++){
+    const p=document.createElement('div');
+    p.className='particle';
+    const size=Math.random()*4+2;
+    p.style.cssText=`
+      width:${size}px;height:${size}px;
+      left:${Math.random()*100}vw;
+      background:${colors[Math.floor(Math.random()*colors.length)]};
+      animation-duration:${Math.random()*15+10}s;
+      animation-delay:${Math.random()*15}s;
+      box-shadow:0 0 ${size*2}px currentColor;
+    `;
+    document.body.appendChild(p);
+  }
+})();
+</script>
+</body>
+</html>

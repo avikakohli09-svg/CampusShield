@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
+<title>CampusShield — SOS Reporter</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+:root{
+  --bg:#060a1a;--surface:#0d1327;--surface-2:rgba(255,255,255,0.04);
+  --border:rgba(255,255,255,0.08);--border-bright:rgba(255,255,255,0.14);
+  --text:#f1f5f9;--muted:#64748b;--muted2:#94a3b8;
+  --red:#ff3b3b;--red-dark:#dc2626;--red-glow:rgba(255,59,59,0.5);
+  --orange:#f97316;--yellow:#eab308;--green:#10b981;--blue:#3b82f6;
+  --purple:#8b5cf6;
+  --radius:16px;--radius-sm:10px;
+}
+html,body{height:100%;font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);overflow-x:hidden}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border-bright);border-radius:4px}
+
+/* ── Background ── */
+.bg-blobs{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
+.blob{position:absolute;border-radius:50%;filter:blur(80px);opacity:.2}
+.blob-1{width:500px;height:500px;background:#ff3b3b;top:-100px;right:-100px;animation:blobAnim 10s ease-in-out infinite}
+.blob-2{width:400px;height:400px;background:#8b5cf6;bottom:-100px;left:-80px;animation:blobAnim 12s ease-in-out infinite reverse}
+@keyframes blobAnim{0%,100%{transform:scale(1) translate(0,0)}50%{transform:scale(1.1) translate(20px,-20px)}}
+
+/* ── Layout ── */
+.app{position:relative;z-index:1;min-height:100vh;display:grid;grid-template-rows:auto 1fr;max-width:480px;margin:0 auto}
+@media(min-width:900px){.app{max-width:900px;grid-template-columns:400px 1fr;grid-template-rows:auto 1fr}}
+
+/* ── Top Nav ── */
+.topnav{
+  grid-column:1/-1;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:1rem 1.25rem;
+  background:rgba(6,10,26,.85);
+  backdrop-filter:blur(20px);
+  border-bottom:1px solid var(--border);
+  position:sticky;top:0;z-index:100;
+}
+.nav-brand{display:flex;align-items:center;gap:.6rem;font-weight:800;font-size:1.1rem}
+.nav-brand span{font-size:1.5rem}
+.nav-status{display:flex;align-items:center;gap:.4rem;font-size:.75rem;color:var(--muted2)}
+.ws-dot{width:7px;height:7px;border-radius:50%;background:#10b981;animation:blink 1.5s ease-in-out infinite}
+@keyframes blink{0%,100%{opacity:1;box-shadow:0 0 6px #10b981}50%{opacity:.3;box-shadow:none}}
+.ws-dot.disconnected{background:#ef4444;animation:none}
+.nav-back{color:var(--muted2);text-decoration:none;font-size:.85rem;padding:.4rem .8rem;border-radius:8px;border:1px solid var(--border);transition:all .2s}
+.nav-back:hover{background:var(--surface-2);color:var(--text)}
+
+/* ── LEFT PANEL ── */
+.left-panel{
+  padding:1.25rem;
+  overflow-y:auto;
+  display:flex;flex-direction:column;gap:1rem;
+}
+@media(min-width:900px){.left-panel{border-right:1px solid var(--border)}}
+
+/* ── Incident Status Hero ── */
+.status-hero{
+  background:linear-gradient(135deg,rgba(255,59,59,.12),rgba(139,92,246,.08));
+  border:1px solid rgba(255,59,59,.2);
+  border-radius:var(--radius);padding:1.4rem;
+  position:relative;overflow:hidden;
+}
+.status-hero::before{
+  content:'';position:absolute;top:-40px;right:-40px;
+  width:150px;height:150px;border-radius:50%;
+  background:radial-gradient(circle,rgba(255,59,59,.2),transparent);
+  pointer-events:none;
+}
+.status-hero.safe{background:linear-gradient(135deg,rgba(16,185,129,.1),rgba(59,130,246,.06));border-color:rgba(16,185,129,.25)}
+.status-hero.safe::before{background:radial-gradient(circle,rgba(16,185,129,.2),transparent)}
+.status-hero.dispatched{background:linear-gradient(135deg,rgba(249,115,22,.12),rgba(234,179,8,.06));border-color:rgba(249,115,22,.3)}
+
+.hero-row{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem}
+.hero-left .hero-label{font-size:.7rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:.3rem}
+.hero-title{font-size:1.4rem;font-weight:800;line-height:1.2}
+.hero-sub{font-size:.8rem;color:var(--muted2);margin-top:.3rem}
+.hero-badge{
+  display:inline-flex;align-items:center;gap:.35rem;
+  padding:.35rem .8rem;border-radius:100px;font-size:.75rem;font-weight:600;white-space:nowrap;
+}
+.badge-reported{background:rgba(239,68,68,.2);color:#fca5a5;border:1px solid rgba(239,68,68,.3)}
+.badge-acknowledged{background:rgba(234,179,8,.2);color:#fde68a;border:1px solid rgba(234,179,8,.3)}
+.badge-dispatched{background:rgba(249,115,22,.2);color:#fdba74;border:1px solid rgba(249,115,22,.3)}
+.badge-on_site{background:rgba(59,130,246,.2);color:#93c5fd;border:1px solid rgba(59,130,246,.3)}
+.badge-resolved{background:rgba(16,185,129,.2);color:#6ee7b7;border:1px solid rgba(16,185,129,.3)}
+
+/* ── Progress tracker ── */
+.progress-track{display:flex;align-items:center;gap:0;margin:.5rem 0}
+.prog-step{display:flex;flex-direction:column;align-items:center;flex:1;position:relative}
+.prog-step::after{content:'';position:absolute;top:12px;left:50%;width:100%;height:2px;background:var(--border);z-index:0;transition:background .4s}
+.prog-step:last-child::after{display:none}
+.prog-step.done::after{background:var(--green)}
+.prog-step.active::after{background:linear-gradient(90deg,var(--green),var(--border))}
+.prog-dot{width:24px;height:24px;border-radius:50%;background:var(--border);position:relative;z-index:1;display:flex;align-items:center;justify-content:center;font-size:.65rem;transition:all .4s}
+.prog-step.done .prog-dot{background:var(--green);box-shadow:0 0 10px rgba(16,185,129,.5)}
+.prog-step.active .prog-dot{background:var(--orange);box-shadow:0 0 10px rgba(249,115,22,.6);animation:progPulse 1.5s ease-in-out infinite}
+@keyframes progPulse{0%,100%{box-shadow:0 0 10px rgba(249,115,22,.6)}50%{box-shadow:0 0 20px rgba(249,115,22,.9),0 0 40px rgba(249,115,22,.4)}}
+.prog-label{font-size:.6rem;color:var(--muted);margin-top:.3rem;text-align:center;white-space:nowrap}
+
+/* ── SOS button area ── */
+.sos-section{text-align:center}
+.sos-wrap{position:relative;display:inline-flex;align-items:center;justify-content:center;margin-bottom:.75rem}
+.sos-ring{position:absolute;border-radius:50%;border:2px solid rgba(255,59,59,.3);animation:sosPing 2s ease-out infinite}
+.sos-ring-1{width:160px;height:160px;animation-delay:0s}
+.sos-ring-2{width:200px;height:200px;animation-delay:.6s;border-color:rgba(255,59,59,.15)}
+.sos-ring-3{width:240px;height:240px;animation-delay:1.2s;border-color:rgba(255,59,59,.07)}
+@keyframes sosPing{0%{transform:scale(.8);opacity:1}100%{transform:scale(1.3);opacity:0}}
+
+.sos-btn{
+  width:130px;height:130px;border-radius:50%;border:none;cursor:pointer;
+  background:radial-gradient(circle at 35% 35%,#ff6b6b,#dc2626 50%,#991b1b);
+  box-shadow:0 0 0 4px rgba(255,59,59,.2),0 0 40px rgba(255,59,59,.5),0 8px 32px rgba(0,0,0,.5);
+  position:relative;z-index:1;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.2rem;
+  transition:all .15s;
+  animation:sosGlow 3s ease-in-out infinite;
+}
+@keyframes sosGlow{0%,100%{box-shadow:0 0 0 4px rgba(255,59,59,.2),0 0 40px rgba(255,59,59,.5),0 8px 32px rgba(0,0,0,.5)}50%{box-shadow:0 0 0 4px rgba(255,59,59,.35),0 0 60px rgba(255,59,59,.8),0 8px 32px rgba(0,0,0,.5)}}
+.sos-btn:hover{transform:scale(1.04)}
+.sos-btn:active{transform:scale(.97)}
+.sos-btn.disabled{background:radial-gradient(circle,#334155,#1e293b);box-shadow:none;animation:none;cursor:not-allowed}
+.sos-emoji{font-size:2.4rem;line-height:1}
+.sos-text{font-size:.85rem;font-weight:800;color:#fff;letter-spacing:.05em}
+.sos-hint{font-size:.75rem;color:var(--muted);margin-top:.5rem}
+
+/* ── Incident type selector ── */
+.type-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem}
+.type-btn{
+  display:flex;flex-direction:column;align-items:center;gap:.35rem;
+  padding:.7rem .4rem;border-radius:var(--radius-sm);
+  border:1px solid var(--border);background:var(--surface-2);cursor:pointer;
+  transition:all .2s;font-size:.7rem;font-weight:500;color:var(--muted2);
+}
+.type-btn .t-icon{font-size:1.5rem;line-height:1}
+.type-btn:hover{border-color:var(--border-bright);color:var(--text);transform:translateY(-2px)}
+.type-btn.selected{border-color:var(--red);background:rgba(255,59,59,.12);color:var(--text);box-shadow:0 0 16px rgba(255,59,59,.2)}
+
+/* ── Form ── */
+.field{display:flex;flex-direction:column;gap:.4rem}
+.field label{font-size:.75rem;font-weight:600;color:var(--muted2);text-transform:uppercase;letter-spacing:.05em}
+.field input,.field textarea,.field select{
+  background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);
+  padding:.7rem .9rem;color:var(--text);font-family:inherit;font-size:.875rem;
+  transition:border-color .2s,box-shadow .2s;resize:none;
+}
+.field input:focus,.field textarea:focus,.field select:focus{outline:none;border-color:rgba(255,59,59,.5);box-shadow:0 0 0 3px rgba(255,59,59,.1)}
+.field textarea{min-height:70px}
+.field select option{background:#0d1327}
+
+/* ── Card container ── */
+.card{background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:1rem}
+.card-title{font-size:.8rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted2);margin-bottom:.8rem;display:flex;align-items:center;gap:.4rem}
+
+/* ── Responder info card ── */
+.resp-card{display:flex;gap:.8rem;align-items:center}
+.resp-avatar{width:52px;height:52px;border-radius:12px;object-fit:cover;border:2px solid var(--border-bright);flex-shrink:0}
+.resp-avatar-placeholder{width:52px;height:52px;border-radius:12px;background:linear-gradient(135deg,#334155,#1e293b);display:flex;align-items:center;justify-content:center;font-size:1.5rem;flex-shrink:0}
+.resp-name{font-weight:700;font-size:.95rem}
+.resp-role{font-size:.75rem;color:var(--muted);margin-top:.1rem}
+.resp-unit{display:inline-flex;align-items:center;gap:.3rem;margin-top:.4rem;font-size:.7rem;background:rgba(59,130,246,.15);color:#93c5fd;border:1px solid rgba(59,130,246,.25);padding:.2rem .6rem;border-radius:100px}
+.eta-chip{margin-top:.5rem;display:flex;align-items:center;gap:.4rem;font-size:.8rem}
+.eta-val{font-size:1.3rem;font-weight:800;color:var(--orange)}
+
+/* ── Safety instructions ── */
+.instr-list{display:flex;flex-direction:column;gap:.5rem}
+.instr-item{display:flex;gap:.6rem;padding:.6rem .7rem;background:rgba(255,255,255,.03);border-radius:8px;border-left:3px solid var(--red);font-size:.8rem;line-height:1.5;color:var(--muted2)}
+.instr-num{color:var(--red);font-weight:700;font-size:.85rem;flex-shrink:0;min-width:1.2rem}
+
+/* ── Audit log ── */
+.log-list{display:flex;flex-direction:column;gap:.4rem;max-height:200px;overflow-y:auto}
+.log-item{display:flex;gap:.6rem;align-items:flex-start;font-size:.75rem;color:var(--muted2);padding:.4rem 0;border-bottom:1px solid rgba(255,255,255,.04)}
+.log-item:last-child{border-bottom:none}
+.log-event{background:rgba(255,255,255,.07);border-radius:4px;padding:.1rem .4rem;font-weight:700;font-size:.65rem;color:var(--text);white-space:nowrap}
+.log-time{color:var(--muted);white-space:nowrap;font-size:.7rem;min-width:5rem}
+
+/* ── RIGHT PANEL (Map) ── */
+.right-panel{position:relative;min-height:400px}
+@media(min-width:900px){.right-panel{position:sticky;top:60px;height:calc(100vh - 60px)}}
+#reporter-map{width:100%;height:100%;min-height:400px;background:#0a0f1e}
+.map-overlay{
+  position:absolute;top:.8rem;left:.8rem;right:.8rem;z-index:999;
+  display:flex;flex-direction:column;gap:.5rem;pointer-events:none;
+}
+.map-pill{
+  display:inline-flex;align-items:center;gap:.5rem;
+  background:rgba(6,10,26,.9);border:1px solid var(--border-bright);
+  backdrop-filter:blur(16px);border-radius:100px;
+  padding:.4rem .9rem;font-size:.75rem;width:fit-content;pointer-events:auto;
+}
+.map-pill .pill-dot{width:8px;height:8px;border-radius:50%}
+.tracking-banner{
+  position:absolute;bottom:.8rem;left:.8rem;right:.8rem;z-index:999;
+  background:rgba(249,115,22,.12);border:1px solid rgba(249,115,22,.35);
+  border-radius:var(--radius);padding:.8rem 1rem;
+  backdrop-filter:blur(16px);
+  display:none;
+}
+.tracking-banner.show{display:flex;align-items:center;gap:.7rem}
+.tracking-banner .t-icon-anim{font-size:1.5rem;animation:bounce .8s ease-in-out infinite}
+@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+.tracking-banner .t-text strong{display:block;font-weight:700;font-size:.85rem;color:#fdba74}
+.tracking-banner .t-text span{font-size:.75rem;color:var(--muted2)}
+.eta-countdown{font-size:1.4rem;font-weight:900;color:var(--orange);margin-left:auto;text-align:center}
+.eta-countdown small{display:block;font-size:.6rem;font-weight:400;color:var(--muted);text-align:center}
+
+/* ── Toast notification ── */
+#toast-container{position:fixed;top:1rem;right:1rem;z-index:9999;display:flex;flex-direction:column;gap:.5rem;max-width:340px}
+.toast{
+  display:flex;align-items:flex-start;gap:.7rem;
+  background:rgba(13,19,39,.95);border-radius:14px;padding:1rem 1rem;
+  border-left:4px solid var(--green);
+  backdrop-filter:blur(20px);
+  box-shadow:0 8px 32px rgba(0,0,0,.5);
+  animation:toastIn .3s cubic-bezier(.4,0,.2,1) forwards;
+  pointer-events:none;
+  font-size:.85rem;
+}
+.toast.error{border-color:var(--red)}
+.toast.warning{border-color:var(--orange)}
+.toast.info{border-color:var(--blue)}
+@keyframes toastIn{from{opacity:0;transform:translateX(50px)}to{opacity:1;transform:translateX(0)}}
+@keyframes toastOut{from{opacity:1;transform:translateX(0)}to{opacity:0;transform:translateX(50px)}}
+.toast-icon{font-size:1.3rem;flex-shrink:0}
+.toast-title{font-weight:700;color:var(--text);margin-bottom:.2rem}
+.toast-msg{color:var(--muted2);font-size:.8rem}
+
+/* ── Button ── */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:.5rem;
+  padding:.8rem 1.4rem;border-radius:12px;border:none;cursor:pointer;
+  font-family:inherit;font-size:.9rem;font-weight:700;transition:all .2s;
+  width:100%;
+}
+.btn-red{background:linear-gradient(135deg,var(--red),var(--red-dark));color:#fff;box-shadow:0 4px 20px rgba(255,59,59,.35)}
+.btn-red:hover{box-shadow:0 4px 30px rgba(255,59,59,.55);transform:translateY(-1px)}
+.btn-ghost{background:var(--surface-2);color:var(--muted2);border:1px solid var(--border)}
+.btn-ghost:hover{border-color:var(--border-bright);color:var(--text)}
+.btn:disabled{opacity:.4;cursor:not-allowed;transform:none!important;box-shadow:none!important}
+
+/* ── Map dark tiles override ── */
+.leaflet-tile-pane{filter:brightness(.7) saturate(.8) hue-rotate(200deg)}
+.leaflet-container{background:#0a0f1e!important}
+.leaflet-popup-content-wrapper{background:#0d1327;color:#f1f5f9;border:1px solid rgba(255,255,255,.1);border-radius:12px}
+.leaflet-popup-tip{background:#0d1327}
+
+/* ── Spinner ── */
+.spin{width:18px;height:18px;border:2px solid rgba(255,255,255,.2);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite;flex-shrink:0}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── Divider ── */
+.divider{display:flex;align-items:center;gap:.7rem;color:var(--muted);font-size:.75rem;text-transform:uppercase;letter-spacing:.08em}
+.divider::before,.divider::after{content:'';flex:1;height:1px;background:var(--border)}
+
+/* ── Section label ── */
+.section-title{font-size:.7rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:600;display:flex;align-items:center;gap:.4rem}
+
+/* ── Resolved screen ── */
+.resolved-banner{
+  background:linear-gradient(135deg,rgba(16,185,129,.15),rgba(59,130,246,.08));
+  border:1px solid rgba(16,185,129,.3);border-radius:var(--radius);padding:1.5rem;text-align:center;
+}
+.resolved-banner .r-icon{font-size:3rem;margin-bottom:.5rem}
+.resolved-banner h3{font-size:1.3rem;font-weight:800;color:var(--green)}
+.resolved-banner p{font-size:.85rem;color:var(--muted2);margin-top:.4rem}
+</style>
+</head>
+<body>
+<div class="bg-blobs"><div class="blob blob-1"></div><div class="blob blob-2"></div></div>
+
+<div class="app">
+  <!-- TOP NAV -->
+  <nav class="topnav">
+    <div class="nav-brand"><span>🛡️</span> CampusShield</div>
+    <div style="display:flex;align-items:center;gap:.8rem">
+      <div class="nav-status" id="ws-status"><span class="ws-dot disconnected" id="ws-dot"></span><span id="ws-label">Connecting…</span></div>
+      <a href="/" class="nav-back">← Home</a>
+    </div>
+  </nav>
+
+  <!-- LEFT PANEL -->
+  <div class="left-panel" id="left-panel">
+
+    <!-- IDLE STATE: no active incident -->
+    <div id="idle-view">
+      <div style="text-align:center;padding:.5rem 0 .3rem">
+        <div style="font-size:1.1rem;font-weight:800;margin-bottom:.25rem">Emergency SOS</div>
+        <div style="font-size:.8rem;color:var(--muted2)">Select incident type, then press SOS</div>
+      </div>
+
+      <!-- Incident Type -->
+      <div class="type-grid" id="type-grid">
+        <button class="type-btn selected" data-type="medical"><span class="t-icon">🏥</span>Medical</button>
+        <button class="type-btn" data-type="fire"><span class="t-icon">🔥</span>Fire</button>
+        <button class="type-btn" data-type="security"><span class="t-icon">🚨</span>Security</button>
+        <button class="type-btn" data-type="accident"><span class="t-icon">💥</span>Accident</button>
+        <button class="type-btn" data-type="hazard"><span class="t-icon">☣️</span>Hazard</button>
+        <button class="type-btn" data-type="general"><span class="t-icon">⚠️</span>General</button>
+      </div>
+
+      <!-- SOS Button -->
+      <div class="sos-section">
+        <div class="sos-wrap">
+          <div class="sos-ring sos-ring-1"></div>
+          <div class="sos-ring sos-ring-2"></div>
+          <div class="sos-ring sos-ring-3"></div>
+          <button class="sos-btn" id="sos-btn" onclick="handleSOS()">
+            <span class="sos-emoji">🆘</span>
+            <span class="sos-text">SOS</span>
+          </button>
+        </div>
+        <div class="sos-hint">📍 Your GPS location will be shared</div>
+      </div>
+
+      <!-- Optional details -->
+      <div class="divider">Optional Details</div>
+      <div class="field">
+        <label>Your Name</label>
+        <input id="inp-name" type="text" placeholder="Anonymous Student" autocomplete="off"/>
+      </div>
+      <div class="field">
+        <label>Location Description</label>
+        <input id="inp-location" type="text" placeholder="e.g. Library 2nd Floor, Room 42" autocomplete="off"/>
+      </div>
+      <div class="field">
+        <label>What happened?</label>
+        <textarea id="inp-desc" placeholder="Briefly describe the emergency…"></textarea>
+      </div>
+    </div>
+
+    <!-- ACTIVE INCIDENT STATE -->
+    <div id="active-view" style="display:none;flex-direction:column;gap:1rem">
+
+      <!-- Status hero -->
+      <div class="status-hero" id="status-hero">
+        <div class="hero-row">
+          <div class="hero-left">
+            <div class="hero-label">Incident Status</div>
+            <div class="hero-title" id="hero-title">Help Requested</div>
+            <div class="hero-sub" id="hero-sub">Connecting to campus emergency network…</div>
+          </div>
+          <div class="hero-badge badge-reported" id="status-badge">REPORTED</div>
+        </div>
+        <!-- Progress -->
+        <div class="progress-track" id="progress-track" style="margin-top:1rem">
+          <div class="prog-step active" data-s="reported"><div class="prog-dot">📡</div><div class="prog-label">Reported</div></div>
+          <div class="prog-step" data-s="acknowledged"><div class="prog-dot">✓</div><div class="prog-label">Seen</div></div>
+          <div class="prog-step" data-s="dispatched"><div class="prog-dot">🚗</div><div class="prog-label">En Route</div></div>
+          <div class="prog-step" data-s="on_site"><div class="prog-dot">🏁</div><div class="prog-label">On Site</div></div>
+          <div class="prog-step" data-s="resolved"><div class="prog-dot">✅</div><div class="prog-label">Resolved</div></div>
+        </div>
+      </div>
+
+      <!-- Incident code -->
+      <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+        <div style="font-size:.7rem;color:var(--muted)">Incident Code:</div>
+        <div id="inc-code" style="font-weight:700;font-size:.9rem;font-family:monospace;color:#93c5fd;background:rgba(59,130,246,.1);padding:.2rem .6rem;border-radius:6px;border:1px solid rgba(59,130,246,.2)"></div>
+        <div style="font-size:.7rem;color:var(--muted)" id="inc-time"></div>
+      </div>
+
+      <!-- Assigned responder -->
+      <div class="card" id="resp-section" style="display:none">
+        <div class="card-title">🚑 Assigned Responder</div>
+        <div class="resp-card">
+          <div class="resp-avatar-placeholder" id="resp-avatar">👮</div>
+          <div>
+            <div class="resp-name" id="resp-name">—</div>
+            <div class="resp-role" id="resp-role">—</div>
+            <div class="resp-unit" id="resp-unit">—</div>
+            <div class="eta-chip">
+              <span style="color:var(--muted);font-size:.75rem">ETA:</span>
+              <span class="eta-val" id="resp-eta">—</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Safety instructions -->
+      <div class="card" id="instr-section" style="display:none">
+        <div class="card-title">⚡ Immediate Actions</div>
+        <div class="instr-list" id="instr-list"></div>
+      </div>
+
+      <!-- Nearest safe point -->
+      <div class="card" id="safepoint-section" style="display:none">
+        <div class="card-title">🏥 Nearest Safe Point</div>
+        <div id="safepoint-info"></div>
+      </div>
+
+      <!-- Audit log -->
+      <div class="card">
+        <div class="card-title">📋 Activity Log</div>
+        <div class="log-list" id="log-list"></div>
+      </div>
+
+      <!-- Report another -->
+      <button class="btn btn-ghost" onclick="resetToIdle()" id="new-report-btn" style="display:none">+ Report Another Incident</button>
+    </div>
+
+  </div><!-- /left-panel -->
+
+  <!-- RIGHT PANEL: MAP -->
+  <div class="right-panel">
+    <div id="reporter-map"></div>
+    <div class="map-overlay">
+      <div class="map-pill" id="map-status-pill">
+        <span class="pill-dot" style="background:#3b82f6"></span>
+        <span id="map-pill-text">Your Location</span>
+      </div>
+    </div>
+    <div class="tracking-banner" id="tracking-banner">
+      <span class="t-icon-anim">🚗</span>
+      <div class="t-text">
+        <strong>Responder En Route!</strong>
+        <span>Live location updating every 3 seconds</span>
+      </div>
+      <div class="eta-countdown" id="eta-countdown">—<small>ETA</small></div>
+    </div>
+  </div>
+
+</div><!-- /app -->
+
+<!-- Toast container -->
+<div id="toast-container"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════
+//  CAMPUSSHIELD REPORTER — FRONTEND
+// ═══════════════════════════════════════════════════════
+
+const API = '';   // same origin
+const WS_URL = `ws://${location.host}/ws`;
+
+let ws = null;
+let activeIncident = null;
+let userCoords = null;
+let selectedType = 'medical';
+let map = null;
+let userMarker = null;
+let respMarker = null;
+let routeLine = null;
+let locationInterval = null;
+
+// ── Init ──────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  initMap();
+  connectWS();
+  getUserLocation();
+  initTypeGrid();
+});
+
+// ── Map ───────────────────────────────────────────────
+function initMap() {
+  map = L.map('reporter-map', {
+    zoomControl: true,
+    attributionControl: false,
+    center: [28.5458, 77.1920],
+    zoom: 16
+  });
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: ''
+  }).addTo(map);
+  setTimeout(() => map.invalidateSize(), 300);
+}
+
+function getUserLocation() {
+  if (!navigator.geolocation) {
+    userCoords = { lat: 28.5458, lng: 77.1920 };
+    placeUserMarker();
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      userCoords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      placeUserMarker();
+      map.setView([userCoords.lat, userCoords.lng], 17);
+    },
+    () => {
+      // fallback: campus center
+      userCoords = { lat: 28.5458, lng: 77.1920 };
+      placeUserMarker();
+    },
+    { timeout: 6000, enableHighAccuracy: true }
+  );
+}
+
+function placeUserMarker() {
+  if (userMarker) userMarker.remove();
+  const icon = L.divIcon({
+    html: `<div style="
+      width:36px;height:36px;border-radius:50%;
+      background:linear-gradient(135deg,#ff3b3b,#dc2626);
+      border:3px solid #fff;display:flex;align-items:center;justify-content:center;
+      font-size:1rem;box-shadow:0 0 0 6px rgba(255,59,59,.3),0 4px 12px rgba(0,0,0,.5);
+      animation:markerPulse 2s ease-in-out infinite;
+    ">🆘</div>
+    <style>@keyframes markerPulse{0%,100%{box-shadow:0 0 0 6px rgba(255,59,59,.3),0 4px 12px rgba(0,0,0,.5)}50%{box-shadow:0 0 0 14px rgba(255,59,59,.15),0 4px 12px rgba(0,0,0,.5)}}</style>`,
+    iconSize: [36, 36], iconAnchor: [18, 18], className: ''
+  });
+  userMarker = L.marker([userCoords.lat, userCoords.lng], { icon, zIndexOffset: 1000 })
+    .addTo(map)
+    .bindPopup('<b style="color:#ff3b3b">📍 Your Location</b>');
+}
+
+function placeOrUpdateRespMarker(lat, lng, respName) {
+  const icon = L.divIcon({
+    html: `<div style="
+      width:40px;height:40px;border-radius:50%;
+      background:linear-gradient(135deg,#f97316,#ea580c);
+      border:3px solid #fff;display:flex;align-items:center;justify-content:center;
+      font-size:1.2rem;box-shadow:0 0 0 6px rgba(249,115,22,.35),0 4px 12px rgba(0,0,0,.5);
+      animation:respPulse 1.5s ease-in-out infinite;
+    ">🚨</div>
+    <style>@keyframes respPulse{0%,100%{box-shadow:0 0 0 6px rgba(249,115,22,.35)}50%{box-shadow:0 0 0 14px rgba(249,115,22,.15)}}</style>`,
+    iconSize: [40, 40], iconAnchor: [20, 20], className: ''
+  });
+  if (!respMarker) {
+    respMarker = L.marker([lat, lng], { icon, zIndexOffset: 900 }).addTo(map);
+  } else {
+    respMarker.setLatLng([lat, lng]);
+  }
+  respMarker.bindPopup(`<b style="color:#f97316">🚨 ${respName || 'Responder'}</b><br><small>En Route to you</small>`);
+
+  // Draw route line
+  if (userCoords) {
+    const latlngs = [[lat, lng], [userCoords.lat, userCoords.lng]];
+    if (!routeLine) {
+      routeLine = L.polyline(latlngs, {
+        color: '#f97316', weight: 3, opacity: .8,
+        dashArray: '8 6', dashOffset: '0'
+      }).addTo(map);
+    } else {
+      routeLine.setLatLngs(latlngs);
+    }
+    // Fit bounds
+    map.fitBounds(routeLine.getBounds(), { padding: [50, 50] });
+  }
+}
+
+// ── WebSocket ─────────────────────────────────────────
+function connectWS() {
+  ws = new WebSocket(WS_URL);
+  ws.onopen = () => {
+    document.getElementById('ws-dot').classList.remove('disconnected');
+    document.getElementById('ws-label').textContent = 'Connected';
+  };
+  ws.onclose = () => {
+    document.getElementById('ws-dot').classList.add('disconnected');
+    document.getElementById('ws-label').textContent = 'Reconnecting…';
+    setTimeout(connectWS, 3000);
+  };
+  ws.onmessage = e => {
+    try { handleWsEvent(JSON.parse(e.data)); } catch {}
+  };
+}
+
+function handleWsEvent(msg) {
+  const { event, data } = msg;
+  if (!activeIncident) return;
+
+  if (event === 'incident_updated' && data.id === activeIncident.id) {
+    updateActiveIncident(data);
+  }
+  if (event === 'incident_escalated' && data.incident?.id === activeIncident.id) {
+    updateActiveIncident(data.incident);
+    showToast('⚠️ Escalation', `Level ${data.level} escalation triggered! Additional units notified.`, 'warning');
+  }
+  if (event === 'responder_location_update' && data.incident_id === activeIncident.id) {
+    const { lat, lng, eta_seconds } = data;
+    const name = activeIncident.assigned_responder?.name || 'Responder';
+    placeOrUpdateRespMarker(lat, lng, name);
+    if (eta_seconds != null) {
+      const mins = Math.floor(eta_seconds / 60);
+      const secs = eta_seconds % 60;
+      document.getElementById('eta-countdown').innerHTML =
+        `${mins > 0 ? mins + 'm ' : ''}${secs}s<small>ETA</small>`;
+      document.getElementById('resp-eta').textContent =
+        eta_seconds <= 0 ? 'Arrived!' : (mins > 0 ? `${mins}m ${secs}s` : `${secs}s`);
+    }
+    document.getElementById('tracking-banner').classList.add('show');
+  }
+  if (event === 'responder_moved' && data.incident_id === activeIncident.id) {
+    const r = data.responder;
+    placeOrUpdateRespMarker(r.coords.lat, r.coords.lng, r.name);
+    document.getElementById('tracking-banner').classList.add('show');
+    if (r.eta_seconds != null) {
+      const mins = Math.floor(r.eta_seconds / 60);
+      const secs = r.eta_seconds % 60;
+      document.getElementById('eta-countdown').innerHTML =
+        `${mins > 0 ? mins + 'm ' : ''}${secs}s<small>ETA</small>`;
+      document.getElementById('resp-eta').textContent =
+        r.eta_seconds <= 0 ? 'Arrived!' : (mins > 0 ? `${mins}m ${secs}s` : `${secs}s`);
+    }
+  }
+}
+
+// ── Type selector ─────────────────────────────────────
+function initTypeGrid() {
+  document.querySelectorAll('.type-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.type-btn').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      selectedType = btn.dataset.type;
+    });
+  });
+}
+
+// ── SOS ───────────────────────────────────────────────
+async function handleSOS() {
+  const btn = document.getElementById('sos-btn');
+  btn.classList.add('disabled');
+  btn.innerHTML = '<div class="spin"></div><span class="sos-text">Sending…</span>';
+
+  if (!userCoords) {
+    // Try once more
+    await new Promise(res => {
+      navigator.geolocation?.getCurrentPosition(
+        p => { userCoords = { lat: p.coords.latitude, lng: p.coords.longitude }; res(); },
+        () => { userCoords = { lat: 28.5458, lng: 77.1920 }; res(); },
+        { timeout: 3000 }
+      ) || res();
+    });
+  }
+
+  const payload = {
+    incident_type: selectedType,
+    location_name: document.getElementById('inp-location').value.trim() || 'Campus (GPS)',
+    description: document.getElementById('inp-desc').value.trim(),
+    reporter_name: document.getElementById('inp-name').value.trim() || 'Anonymous Student',
+    reporter_phone: '+91 98765 43210',
+    coords: userCoords || { lat: 28.5458, lng: 77.1920 }
+  };
+
+  try {
+    const res = await fetch(`${API}/api/incidents`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error('Server error');
+    const inc = await res.json();
+    activeIncident = inc;
+    showActiveView(inc);
+    showToast('✅ SOS Sent!', `Incident ${inc.code} reported. Help is being coordinated.`, 'success');
+  } catch (err) {
+    showToast('❌ Error', 'Could not reach server. Check your connection.', 'error');
+    btn.classList.remove('disabled');
+    btn.innerHTML = '<span class="sos-emoji">🆘</span><span class="sos-text">SOS</span>';
+  }
+}
+
+// ── Active Incident View ──────────────────────────────
+function showActiveView(inc) {
+  document.getElementById('idle-view').style.display = 'none';
+  document.getElementById('active-view').style.display = 'flex';
+  updateActiveIncident(inc);
+}
+
+function updateActiveIncident(inc) {
+  activeIncident = inc;
+  const s = inc.status;
+
+  // Status hero
+  const hero = document.getElementById('status-hero');
+  const titles = {
+    reported: ['Help Requested 📡', 'Your SOS has been received. Coordinator is routing a responder…'],
+    acknowledged: ['Responder Acknowledged ✓', 'A responder has seen your request and is preparing to assist.'],
+    dispatched: ['Responder En Route! 🚗', 'Help is on the way. Watch the map for live tracking.'],
+    on_site: ['Responder On Site! 🏁', 'The responder has arrived at your location.'],
+    resolved: ['Incident Resolved ✅', 'You are safe. The incident has been closed.'],
+    cancelled: ['Incident Cancelled', 'This incident was cancelled.']
+  };
+  const [title, sub] = titles[s] || ['Unknown Status', ''];
+  document.getElementById('hero-title').textContent = title;
+  document.getElementById('hero-sub').textContent = sub;
+
+  hero.className = 'status-hero';
+  if (s === 'dispatched' || s === 'on_site') hero.classList.add('dispatched');
+  if (s === 'resolved') hero.classList.add('safe');
+
+  const badge = document.getElementById('status-badge');
+  badge.className = `hero-badge badge-${s}`;
+  badge.textContent = s.replace('_', ' ').toUpperCase();
+
+  // Progress
+  const steps = ['reported','acknowledged','dispatched','on_site','resolved'];
+  const curIdx = steps.indexOf(s);
+  document.querySelectorAll('.prog-step').forEach((el, i) => {
+    el.classList.remove('done','active');
+    if (i < curIdx) el.classList.add('done');
+    else if (i === curIdx) el.classList.add('active');
+  });
+
+  // Code + time
+  document.getElementById('inc-code').textContent = inc.code;
+  document.getElementById('inc-time').textContent =
+    new Date(inc.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+
+  // Responder
+  if (inc.assigned_responder) {
+    const r = inc.assigned_responder;
+    document.getElementById('resp-section').style.display = 'block';
+    document.getElementById('resp-name').textContent = r.name;
+    document.getElementById('resp-role').textContent = r.role;
+    document.getElementById('resp-unit').textContent = r.unit_code;
+    const avatarEl = document.getElementById('resp-avatar');
+    if (r.avatar_url) {
+      avatarEl.outerHTML = `<img src="${r.avatar_url}" class="resp-avatar" id="resp-avatar" onerror="this.outerHTML='<div class=resp-avatar-placeholder id=resp-avatar>👮</div>'"/>`;
+    }
+    if (r.eta_seconds != null) {
+      const m = Math.floor(r.eta_seconds / 60), sc = r.eta_seconds % 60;
+      document.getElementById('resp-eta').textContent =
+        r.eta_seconds <= 0 ? 'Arrived!' : (m > 0 ? `${m}m ${sc}s` : `${sc}s`);
+    }
+
+    // Show responder on map if dispatched
+    if (s === 'dispatched' || s === 'on_site') {
+      placeOrUpdateRespMarker(r.coords.lat, r.coords.lng, r.name);
+      document.getElementById('tracking-banner').classList.add('show');
+    }
+  }
+
+  // Safety instructions
+  if (inc.safety_instructions?.length) {
+    document.getElementById('instr-section').style.display = 'block';
+    document.getElementById('instr-list').innerHTML = inc.safety_instructions
+      .map((instr, i) => `<div class="instr-item"><span class="instr-num">${i+1}</span><span>${instr}</span></div>`)
+      .join('');
+  }
+
+  // Nearest safe point
+  if (inc.nearest_safe_point) {
+    const sp = inc.nearest_safe_point;
+    document.getElementById('safepoint-section').style.display = 'block';
+    document.getElementById('safepoint-info').innerHTML = `
+      <div style="font-weight:600;font-size:.9rem">${sp.name}</div>
+      <div style="font-size:.8rem;color:var(--muted2);margin-top:.3rem">${sp.instructions}</div>
+    `;
+    // Place safe point on map
+    const spIcon = L.divIcon({
+      html:`<div style="background:#10b981;border-radius:8px;padding:4px 6px;font-size:.7rem;font-weight:700;color:#fff;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.4)">⛑️ Safe Point</div>`,
+      className:''
+    });
+    L.marker([sp.coords.lat, sp.coords.lng], { icon: spIcon }).addTo(map);
+  }
+
+  // Audit log
+  renderLogs(inc.logs || []);
+
+  // If resolved
+  if (s === 'resolved' || s === 'cancelled') {
+    document.getElementById('new-report-btn').style.display = 'block';
+    if (routeLine) { routeLine.remove(); routeLine = null; }
+    if (respMarker) { respMarker.remove(); respMarker = null; }
+    document.getElementById('tracking-banner').classList.remove('show');
+  }
+}
+
+function renderLogs(logs) {
+  document.getElementById('log-list').innerHTML = [...logs].reverse().slice(0, 10)
+    .map(l => `
+      <div class="log-item">
+        <span class="log-event">${l.event}</span>
+        <span style="flex:1;line-height:1.4">${l.details}</span>
+        <span class="log-time">${new Date(l.timestamp).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}</span>
+      </div>`)
+    .join('') || '<div style="color:var(--muted);font-size:.8rem">No activity yet…</div>';
+}
+
+function resetToIdle() {
+  activeIncident = null;
+  document.getElementById('idle-view').style.display = 'block';
+  document.getElementById('active-view').style.display = 'none';
+  document.getElementById('new-report-btn').style.display = 'none';
+  if (respMarker) { respMarker.remove(); respMarker = null; }
+  if (routeLine) { routeLine.remove(); routeLine = null; }
+  document.getElementById('tracking-banner').classList.remove('show');
+  const btn = document.getElementById('sos-btn');
+  btn.classList.remove('disabled');
+  btn.innerHTML = '<span class="sos-emoji">🆘</span><span class="sos-text">SOS</span>';
+}
+
+// ── Toast ─────────────────────────────────────────────
+function showToast(title, msg, type = 'success') {
+  const icons = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
+  const t = document.createElement('div');
+  t.className = `toast ${type === 'success' ? '' : type}`;
+  t.innerHTML = `
+    <span class="toast-icon">${icons[type]||'ℹ️'}</span>
+    <div><div class="toast-title">${title}</div><div class="toast-msg">${msg}</div></div>`;
+  document.getElementById('toast-container').appendChild(t);
+  setTimeout(() => { t.style.animation = 'toastOut .3s forwards'; setTimeout(() => t.remove(), 350); }, 4500);
+}
+</script>
+</body>
+</html>
